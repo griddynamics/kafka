@@ -224,7 +224,7 @@ object ProducerPerformance extends Logging {
 
       val seqMsgString = String.format("%1$-"+msgSize+"s", msgHeader).replace(' ', 'x')
       debug(seqMsgString)
-      return seqMsgString.getBytes()
+      return seqMsgString.getBytes
     }
 
     private def generateProducerData(topic: String, messageId: Long): (KeyedMessage[Long, Array[Byte]], Int) = {
@@ -239,7 +239,7 @@ object ProducerPerformance extends Logging {
       (new KeyedMessage[Long, Array[Byte]](topic, messageId, message), message.length)
     }
 
-    override def run {
+    override def run() {
       var bytesSent = 0L
       var nSends = 0
       var j: Long = 0L
@@ -247,10 +247,14 @@ object ProducerPerformance extends Logging {
         try {
           config.topics.foreach(
             topic => {
-              val (producerData, bytesSent_) = generateProducerData(topic, j)
-              bytesSent += bytesSent_
-              producer.send(producerData)
-              nSends += 1
+              val batch = Seq.fill(config.batchSize) {
+                val (producerData, bytesCount) = generateProducerData(topic, j)
+                bytesSent += bytesCount
+                producerData
+              }
+              logger.info("Sending messages with batch size of " + batch.size)
+              producer.send(batch:_*)
+              nSends += batch.size
               if(config.messageSendGapMs > 0)
                 Thread.sleep(config.messageSendGapMs)
             }
@@ -258,7 +262,7 @@ object ProducerPerformance extends Logging {
         } catch {
           case e: Exception => error("Error sending messages", e)
         }
-        j += 1
+        j += config.batchSize
       }
       producer.close()
       totalBytesSent.addAndGet(bytesSent)
